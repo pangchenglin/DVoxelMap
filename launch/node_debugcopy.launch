@@ -1,0 +1,12 @@
+<launch>
+
+    <arg name="rviz" default="true" />
+	<rosparam command="load" file="$(find ctsm)/config/aeva.yaml"/>
+
+
+    <group if="$(arg rviz)">
+	<node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find ctsm)/config/avea.rviz"/>
+    </group>
+
+
+</launch>

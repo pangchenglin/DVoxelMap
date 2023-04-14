@@ -1,0 +1,24 @@
+common:
+    lid_topic:  "/aeva_points"
+
+mapping:
+    leaf_size: 0.2
+    range_threshold: 150
+    max_iteration: 3
+    voxel_size: 3.0
+    max_layer: 4
+    point_filter_num: 4
+    layer_point_size: [5, 5, 5, 5, 5]
+    plannar_threshold: 0.01
+    max_points_size: 1000
+    max_cov_points_size: 1000
+
+noise_model:
+    range_cov: 0.04
+    angle_cov: 0.1
+    acc_cov_scale: 1.0
+    gyr_cov_scale: 0.5
+
+visualization:
+    dense_map_enable: false
+    pub_point_cloud_skip: 2
