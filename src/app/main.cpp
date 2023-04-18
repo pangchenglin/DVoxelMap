@@ -327,6 +327,8 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             pointWithCov pv;
             pv.point << undistort_cloud->points[i].x,undistort_cloud->points[i].y,undistort_cloud->points[i].z;
             pv.point_world << world_lidar->points[i].x,world_lidar->points[i].y,world_lidar->points[i].z;
+            pv.radial_vel = undistort_cloud->points[i].velocity;
+            pv.time = undistort_cloud->points[i].time;
             M3D cov = body_var[i];
             M3D point_crossmat = crossmat_list[i];
             M3D rot_var = state.cov.block<3, 3>(0, 0);
@@ -341,18 +343,29 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
         std::vector<V3D> non_match_list;
 
         BuildResidualListOMP(voxel_map, voxel_size, 3.0, max_layer, pv_list, ptpl_list, non_match_list);
-        cout<<"ptpl_list.size():"<<ptpl_list.size()<<endl;
         auto scan_match_time_end = std::chrono::high_resolution_clock::now();
 
         int effect_feat_num = 0;
+        // double sum_radial=0;
+        // double sum_radial_vel = 0;
         for(int i = 0; i < ptpl_list.size();i++)
         {
+
+            // Eigen::Vector3d v_body = state.rot.inverse() * state.vel;
+            // double radial;
+            // radial =  (ptpl_list[i].point.transpose() * v_body);
+            // double norm =  sqrt(ptpl_list[i].point.transpose() * ptpl_list[i].point);
+            // radial /= norm;
+            
+            // sum_radial+=radial;
+            // sum_radial_vel+=ptpl_list[i].radial_vel;
             RTVPoint pi_body;
             RTVPoint pi_world;
             RTVPoint pl;
             pi_body.x = ptpl_list[i].point(0);
             pi_body.y = ptpl_list[i].point(1);
             pi_body.z = ptpl_list[i].point(2);
+            pi_body.velocity = ptpl_list[i].radial_vel;
             pointBodyToWorld(&pi_body, &pi_world);
             pl.x = ptpl_list[i].normal(0);
             pl.y = ptpl_list[i].normal(1);
@@ -368,20 +381,21 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
         }
         res_mean_last = total_residual / effect_feat_num;
         scan_match_time += std::chrono::duration_cast<std::chrono::duration<double>>(scan_match_time_end - scan_match_time_start).count() * 1000;
-        cout<<"res_mean_last:"<<res_mean_last<<endl;
         auto t_solve_start = std::chrono::high_resolution_clock::now();
-        cout<<"effect_feat_num:"<<effect_feat_num<<endl;
+        // sum_radial/=effect_feat_num;
+        // sum_radial_vel/=effect_feat_num;
+        // cout<<"sum_radial:"<<sum_radial<<";sum_radial_vel:"<<sum_radial_vel<<endl;
         /*** Computation of Measuremnt Jacobian matrix H and measurents vector
          * ***/
-        // MatrixXd Hsub(effect_feat_num*2,DIM_STATE);
-        // MatrixXd Hsub_T_R_inv(DIM_STATE,effect_feat_num*2);
-        // VectorXd R_inv(effect_feat_num);
-        // VectorXd meas_vec(effect_feat_num*2);
-
-        MatrixXd Hsub(effect_feat_num, 6);
-        MatrixXd Hsub_T_R_inv(6, effect_feat_num);
+        MatrixXd Hsub(effect_feat_num*2,DIM_STATE);
+        MatrixXd Hsub_T_R_inv(DIM_STATE,effect_feat_num*2);
         VectorXd R_inv(effect_feat_num);
-        VectorXd meas_vec(effect_feat_num);
+        VectorXd meas_vec(effect_feat_num*2);
+
+        // MatrixXd Hsub(effect_feat_num, 6);
+        // MatrixXd Hsub_T_R_inv(6, effect_feat_num);
+        // VectorXd R_inv(effect_feat_num);
+        // VectorXd meas_vec(effect_feat_num);
 
         Hsub.setZero();
         Hsub_T_R_inv.setZero();
@@ -414,47 +428,42 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             /*** calculate the Measuremnt Jacobian matrix H ***/
             /**点到平面残差*/
             V3D A(point_crossmat * state.rot.transpose() * norm_vec);
-            Hsub.row(i)<<VEC_FROM_ARRAY(A),norm_p.x,norm_p.y,norm_p.z;
+            // Hsub.row(i)<<VEC_FROM_ARRAY(A),norm_p.x,norm_p.y,norm_p.z;
             // cout<<"R_inv(i):"<<R_inv(i)<<endl;
             // cout<<"meas_vec(i):"<<-norm_p.intensity;
-            // Hsub.block<1,6>(i,0)<<VEC_FROM_ARRAY(A),norm_p.x,norm_p.y,norm_p.z;
-            Hsub_T_R_inv.col(i) << A[0] * R_inv(i), A[1] * R_inv(i),
-              A[2] * R_inv(i), norm_p.x * R_inv(i), norm_p.y * R_inv(i),
-              norm_p.z * R_inv(i);
-
-            // Hsub_T_R_inv.block<6,1>(0,i) << A[0] * R_inv(i), A[1] * R_inv(i),
+            Hsub.block<1,6>(i,0)<<VEC_FROM_ARRAY(A),norm_p.x,norm_p.y,norm_p.z;
+            // Hsub_T_R_inv.col(i) << A[0] * R_inv(i), A[1] * R_inv(i),
             //   A[2] * R_inv(i), norm_p.x * R_inv(i), norm_p.y * R_inv(i),
             //   norm_p.z * R_inv(i);
+
+            Hsub_T_R_inv.block<6,1>(0,i) << A[0] * R_inv(i), A[1] * R_inv(i),
+              A[2] * R_inv(i), norm_p.x * R_inv(i), norm_p.y * R_inv(i),
+              norm_p.z * R_inv(i);
             meas_vec(i) = -norm_p.intensity;
             /*多普勒速度残差*/
-            // double denominator = sqrt(point_this.transpose() * point_this);
+            double denominator = sqrt(point_this.transpose() * point_this);
 
-            // V3D l = state.rot.transpose() * state.vel;
-            // M3D m ;
-            // m << SKEW_SYM_MATRX(l);
-            // V3D dr_dR = - point_this.transpose() * m / denominator;
-            // // double numerator = - point_this.transpose() * point_this * m;
+            V3D vel_body = state.rot.inverse() * state.vel;
+            M3D skew_vel_body ;
+            skew_vel_body << SKEW_SYM_MATRX(vel_body);
+            V3D dr_dR = - point_this.transpose() * skew_vel_body / denominator;
 
-            // V3D dr_dv = -point_this.transpose() * state.rot.transpose() / denominator;
-
+            V3D dr_dv = -point_this.transpose() * state.rot.transpose() / denominator;
+            double body_vel = point_this.transpose() * state.rot.inverse() * state.vel;// / denominator;
+            body_vel /= denominator;
             // double velo_esti = point_this.transpose() * state.rot.transpose() * state.vel ;/// denominator;
             // velo_esti /= denominator;
-
-            // if(abs(laser_p.velocity-velo_esti) > 0.8)
-            // {
-            //     continue;
-            // }else{
-            //     Hsub.block<1,3>(i+effect_feat_num,0)<< VEC_FROM_ARRAY(dr_dR);
-            //     Hsub.block<1,3>(i+effect_feat_num,6)<< VEC_FROM_ARRAY(dr_dv);
-            //     Hsub_T_R_inv.block<1,3>(0,i+effect_feat_num)<<dr_dR[0]*R_inv(i),dr_dR[1]*R_inv(i),dr_dR[2]*R_inv(i);
-            //     Hsub_T_R_inv.block<1,3>(6,i+effect_feat_num)<<dr_dv[0]*R_inv(i),dr_dv[1]*R_inv(i),dr_dv[2]*R_inv(i);
-            //     meas_vec(i+effect_feat_num) = -(laser_p.velocity - velo_esti);
-
-            // }
+            Hsub.block<1,3>(i+effect_feat_num,0) << VEC_FROM_ARRAY(dr_dR);
+            Hsub.block<1,3>(i+effect_feat_num,6) << VEC_FROM_ARRAY(dr_dv);
+            Hsub_T_R_inv.block<3,1>(0,i+effect_feat_num)<<dr_dR[0]*R_inv(i),dr_dR[1]*R_inv(i),dr_dR[2]*R_inv(i);
+            Hsub_T_R_inv.block<3,1>(6,i+effect_feat_num)<<dr_dv[0]*R_inv(i),dr_dv[1]*R_inv(i),dr_dv[2]*R_inv(i);
+            meas_vec(i+effect_feat_num) = -(laser_p.velocity - body_vel);
+            // meas_vec(i+effect_feat_num) = -( body_vel - laser_p.velocity);
 
         }
 
-        MatrixXd K(DIM_STATE,effect_feat_num);
+        // MatrixXd K(DIM_STATE,effect_feat_num);
+        MatrixXd K(DIM_STATE,2*effect_feat_num);
 
         EKF_stop_flag = false;
         flg_EKF_converged = false;
@@ -484,20 +493,22 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             cout<<"|||||||||||||||||||KF_update||||||||||||||||||||||||"<<endl;
 
             auto &&Hsub_T = Hsub.transpose();
-            // H_T_H = Hsub_T_R_inv * Hsub;
-            H_T_H.block<6, 6>(0, 0) = Hsub_T_R_inv * Hsub;
+
+            H_T_H = Hsub_T_R_inv * Hsub;
+            // H_T_H.block<6, 6>(0, 0) = Hsub_T_R_inv * Hsub;
             // cout<<"HTH:"<<H_T_H.block<6, 6>(0, 0)<<endl;
             // cout<<"state.cov.inverse():"<<(state.cov).inverse()<<endl;
 
             MD(DIM_STATE,DIM_STATE) &&K_1 = (H_T_H + (state.cov).inverse()).inverse();
-            // K = K_1 * Hsub_T_R_inv;
+            K = K_1 * Hsub_T_R_inv;
             // cout<<"K_1:"<<K_1.block<DIM_STATE, 6>(0, 0)<<endl;
 
-            K = K_1.block<DIM_STATE, 6>(0, 0) * Hsub_T_R_inv;
+            // K = K_1.block<DIM_STATE, 6>(0, 0) * Hsub_T_R_inv;
 
             auto vec = state_propagat - state;
 
-            solution = K * meas_vec + vec - K * Hsub * vec.block<6, 1>(0, 0);
+            // solution = K * meas_vec + vec - K * Hsub * vec.block<6, 1>(0, 0);
+            solution = K * meas_vec + vec - K * Hsub * vec;
             
             cout<<"solution:"<<solution.transpose()<<endl;
             // solution = K * meas_vec + vec - K * Hsub * vec;
@@ -507,7 +518,6 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             //     std::cin.get();
             // }
             state += solution;
-
             rot_add = solution.block<3,1>(0,0);
             t_add = solution.block<3,1>(3,0);
             v_add = solution.block<3,1>(6,0);
@@ -532,9 +542,9 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             if(flg_EKF_inited){
                 /*** Covariance Update ***/
                 G.setZero();
-                G.block<DIM_STATE, 6>(0, 0) = K * Hsub;
+                // G.block<DIM_STATE, 6>(0, 0) = K * Hsub;
 
-                // G = K * Hsub;
+                G = K * Hsub;
                 state.cov = (I_STATE - G) * state.cov;
 
                 total_residual += (state.pos - position_last).norm();

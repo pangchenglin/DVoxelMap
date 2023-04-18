@@ -22,6 +22,8 @@ static int plane_id = 0;
 
 typedef struct ptpl{
   Eigen::Vector3d point;
+  double radial_vel;
+  float time;
   Eigen::Vector3d normal;
   Eigen::Vector3d center;
   Eigen::Matrix<double, 6, 6> plane_cov;
@@ -33,7 +35,8 @@ typedef struct pointWithCov {
   Eigen::Vector3d point;
   Eigen::Vector3d point_world;
   Eigen::Matrix3d cov;
-  double velocity;
+  double radial_vel;
+  float time;
 } pointWithCov;
 
 
@@ -647,6 +650,7 @@ void build_single_residual(const pointWithCov &pv, const OctoTree *current_octo,
         if (this_prob > prob) {
           prob = this_prob;
           single_ptpl.point = pv.point;
+          single_ptpl.radial_vel = pv.radial_vel;
           single_ptpl.plane_cov = plane.plane_cov;
           single_ptpl.normal = plane.normal;
           single_ptpl.center = plane.center;
