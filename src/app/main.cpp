@@ -455,8 +455,8 @@ void pclCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg){
             // velo_esti /= denominator;
             Hsub.block<1,3>(i+effect_feat_num,0) << VEC_FROM_ARRAY(dr_dR);
             Hsub.block<1,3>(i+effect_feat_num,6) << VEC_FROM_ARRAY(dr_dv);
-            Hsub_T_R_inv.block<3,1>(0,i+effect_feat_num)<<dr_dR[0]*R_inv(i),dr_dR[1]*R_inv(i),dr_dR[2]*R_inv(i);
-            Hsub_T_R_inv.block<3,1>(6,i+effect_feat_num)<<dr_dv[0]*R_inv(i),dr_dv[1]*R_inv(i),dr_dv[2]*R_inv(i);
+            Hsub_T_R_inv.block<3,1>(0,i+effect_feat_num)<<dr_dR[0],dr_dR[1],dr_dR[2];
+            Hsub_T_R_inv.block<3,1>(6,i+effect_feat_num)<<dr_dv[0],dr_dv[1],dr_dv[2];
             meas_vec(i+effect_feat_num) = -(laser_p.velocity - body_vel);
             // meas_vec(i+effect_feat_num) = -( body_vel - laser_p.velocity);
 
