@@ -22,3 +22,6 @@ noise_model:
 visualization:
     dense_map_enable: false
     pub_point_cloud_skip: 2
+
+
+extrinsic_T_v_l: [1.419999957084655762e+00,2.399999946355819702e-01,1.370000004768371582e+00]
